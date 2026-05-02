@@ -1,8 +1,8 @@
 **Additions:**
 
-- **Pin Window:** Added ability to pin the popup window to always stay on top.
-- **Open Main Window:** Added a button in the popup window to easily open the main translation window with current text.
+- **Editable Input Text:** You can now click on the source text in the popup window to modify it before translating.
 
 **Fixes:**
 
-- **Taskbar Visibility:** Fixed an issue where the main window would become invisible but stay running in the taskbar when closed via the X button.
+- **Update Persistence:** Fixed an issue where updates would revert to the old version after a system reboot. The updater now properly waits for the app to close before applying the update.
+- **Popup Window Rounding:** Fixed visual rounding text on the input and output areas in the popup window.

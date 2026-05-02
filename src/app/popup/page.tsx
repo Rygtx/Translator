@@ -130,7 +130,9 @@ export default function PopupPage() {
       await readClipboard();
     };
     init();
+  }, [loadFromStore, readClipboard]);
 
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
       try {
@@ -148,7 +150,7 @@ export default function PopupPage() {
     return () => {
       if (unlisten) unlisten();
     };
-  }, [loadFromStore, readClipboard, reset]);
+  }, [readClipboard, reset]);
 
   const doTranslate = useCallback(async () => {
     const text = usePopupStore.getState().clipboardText;
