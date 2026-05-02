@@ -64,11 +64,14 @@ export default function PopupPage() {
   const [isSwapping, setIsSwapping] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isPinned, setIsPinned] = useState(true);
+  const [isEditingInput, setIsEditingInput] = useState(false);
   const initRef = useRef(false);
   const translatorSelectRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputTextareaRef = useRef<HTMLTextAreaElement>(null);
   const translatorBtnRef = useRef<HTMLButtonElement>(null);
   const translatorPortalRef = useRef<HTMLDivElement>(null);
+  const retranslateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFreeMode =
     activeApi === "google" ||
@@ -136,6 +139,7 @@ export default function PopupPage() {
         unlisten = await win.listen("popup-refresh", () => {
           reset();
           setIsEditing(false);
+          setIsEditingInput(false);
           readClipboard();
         });
       } catch {}
@@ -185,9 +189,19 @@ export default function PopupPage() {
 
   useEffect(() => {
     if (clipboardText && clipboardText !== "(Could not read clipboard)") {
-      doTranslate();
+      if (isEditingInput) {
+        if (retranslateTimerRef.current) clearTimeout(retranslateTimerRef.current);
+        retranslateTimerRef.current = setTimeout(() => {
+          doTranslate();
+        }, 600);
+        return () => {
+          if (retranslateTimerRef.current) clearTimeout(retranslateTimerRef.current);
+        };
+      } else {
+        doTranslate();
+      }
     }
-  }, [clipboardText, sourceLang, targetLang, activeApi, doTranslate]);
+  }, [clipboardText, sourceLang, targetLang, activeApi, doTranslate, isEditingInput]);
 
   const handleCopy = async () => {
     const textToCopy = isEditing ? editText : translatedText;
@@ -317,12 +331,12 @@ export default function PopupPage() {
 
   return (
     <div
-      className="flex flex-col select-none relative bg-surface text-foreground rounded-(--md-shape-lg) overflow-visible"
+      className="flex flex-col select-none relative bg-surface text-foreground rounded-(--md-shape-md) overflow-clip"
       style={{ height: "100vh", minHeight: 0 }}
     >
       <div
         data-tauri-drag-region
-        className="flex items-center justify-between px-4 py-2 shrink-0 bg-surface-high border-b border-(--md-outline-variant) rounded-t-(--md-shape-lg)"
+        className="flex items-center justify-between px-4 py-2 shrink-0 bg-surface-high border-b border-(--md-outline-variant) rounded-t-(--md-shape-md)"
       >
         <div className="flex items-center gap-2" data-tauri-drag-region>
           <GripHorizontal size={14} className="text-secondary" />
@@ -415,13 +429,48 @@ export default function PopupPage() {
       </div>
 
       <div
-        className="px-4 py-2.5 max-h-16 overflow-y-auto shrink-0 bg-surface-low border-b border-(--md-outline-variant)"
+        className="px-4 py-2.5 max-h-20 overflow-y-auto shrink-0 bg-surface-low border-b border-(--md-outline-variant) group relative"
       >
-        <p
-          className="leading-snug line-clamp-3 text-xs text-secondary"
-        >
-          {clipboardText || "No clipboard text"}
-        </p>
+        {isEditingInput ? (
+          <textarea
+            ref={inputTextareaRef}
+            value={clipboardText}
+            onChange={(e) => {
+              setClipboardText(e.target.value);
+              // auto-resize to fit
+              const el = e.target;
+              el.style.height = 'auto';
+              el.style.height = el.scrollHeight + 'px';
+            }}
+            onBlur={() => {
+              if (!clipboardText.trim()) setIsEditingInput(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setIsEditingInput(false);
+              }
+            }}
+            className="w-full leading-snug text-xs text-secondary bg-transparent border-none outline-none resize-none select-text"
+            rows={1}
+            autoFocus
+            onFocus={(e) => {
+              // auto-resize on focus
+              const el = e.target;
+              el.style.height = 'auto';
+              el.style.height = el.scrollHeight + 'px';
+            }}
+          />
+        ) : (
+          <p
+            className="leading-snug line-clamp-3 text-xs text-secondary cursor-text select-text"
+            onClick={() => {
+              setIsEditingInput(true);
+              setTimeout(() => inputTextareaRef.current?.focus(), 50);
+            }}
+          >
+            {clipboardText || "No clipboard text"}
+          </p>
+        )}
       </div>
 
       <div className="flex-1 px-4 py-3 overflow-y-auto min-h-0">
@@ -432,7 +481,7 @@ export default function PopupPage() {
           </div>
         ) : error ? (
           <div
-            className="flex flex-col gap-2 p-3 text-xs bg-error-container text-error rounded-(--md-shape-sm) border border-error/20"
+            className="flex flex-col gap-2 p-3 text-xs bg-error-container text-error border border-error/20"
           >
             <div className="flex items-start gap-2">
               <TriangleAlert size={16} className="shrink-0 mt-0.5" />
@@ -521,7 +570,7 @@ export default function PopupPage() {
       )}
 
       <div
-        className="flex items-center justify-between px-4 py-2 shrink-0 bg-surface-high border-t border-(--md-outline-variant) rounded-b-(--md-shape-lg) overflow-visible"
+        className="flex items-center justify-between px-4 py-2 shrink-0 bg-surface-high border-t border-(--md-outline-variant) rounded-b-(--md-shape-md)"
       >
         <div className="flex items-center gap-2">
           <div ref={translatorSelectRef} className="relative">
