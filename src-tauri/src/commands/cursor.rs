@@ -65,8 +65,62 @@ pub fn get_cursor_pos() -> (i32, i32) {
     (point.x, point.y)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 pub fn get_cursor_pos() -> (i32, i32) {
+    if let Ok(display_backend) = std::env::var("XDG_SESSION_TYPE") {
+        if display_backend == "wayland" {
+            return get_cursor_pos_wayland();
+        }
+    }
+    get_cursor_pos_x11()
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
+pub fn get_cursor_pos() -> (i32, i32) {
+    (500, 500)
+}
+
+#[cfg(target_os = "linux")]
+fn get_cursor_pos_x11() -> (i32, i32) {
+    use x11::xlib::*;
+    use std::ptr;
+
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return (500, 500);
+        }
+
+        let root = XDefaultRootWindow(display);
+        let mut root_return = 0;
+        let mut child_return = 0;
+        let mut root_x = 0;
+        let mut root_y = 0;
+        let mut win_x = 0;
+        let mut win_y = 0;
+        let mut mask_return = 0;
+
+        XQueryPointer(
+            display,
+            root,
+            &mut root_return,
+            &mut child_return,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask_return,
+        );
+
+        XCloseDisplay(display);
+        (root_x, root_y)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_cursor_pos_wayland() -> (i32, i32) {
+    // Wayland doesn't allow querying global cursor position for security reasons
+    // Return a default position - the popup will still work but won't be perfectly positioned
     (500, 500)
 }
 
@@ -110,8 +164,112 @@ pub fn get_screen_bounds(x: i32, y: i32) -> ScreenBounds {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+pub fn get_screen_bounds(x: i32, y: i32) -> ScreenBounds {
+    if let Ok(display_backend) = std::env::var("XDG_SESSION_TYPE") {
+        if display_backend == "wayland" {
+            return get_screen_bounds_wayland();
+        }
+    }
+    get_screen_bounds_x11(x, y)
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
 pub fn get_screen_bounds(_x: i32, _y: i32) -> ScreenBounds {
+    ScreenBounds {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+        scale_factor: 1.0,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_screen_bounds_x11(x: i32, y: i32) -> ScreenBounds {
+    use x11::xlib::*;
+    use x11::xrandr::*;
+    use std::ptr;
+
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return ScreenBounds {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+                scale_factor: 1.0,
+            };
+        }
+
+        let screen = XDefaultScreen(display);
+        let root = XRootWindow(display, screen);
+
+        let screen_resources = XRRGetScreenResources(display, root);
+        if screen_resources.is_null() {
+            XCloseDisplay(display);
+            return ScreenBounds {
+                left: 0,
+                top: 0,
+                right: XDisplayWidth(display, screen),
+                bottom: XDisplayHeight(display, screen),
+                scale_factor: 1.0,
+            };
+        }
+
+        let num_outputs = (*screen_resources).noutput;
+        let mut best_bounds = ScreenBounds {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+            scale_factor: 1.0,
+        };
+
+        for i in 0..num_outputs {
+            let output = *(*screen_resources).outputs.offset(i as isize);
+            let output_info = XRRGetOutputInfo(display, screen_resources, output);
+
+            if output_info.is_null() || (*output_info).connection != 0 {
+                if !output_info.is_null() {
+                    XRRFreeOutputInfo(output_info);
+                }
+                continue;
+            }
+
+            let crtc_info = XRRGetCrtcInfo(display, screen_resources, (*output_info).crtc);
+            if !crtc_info.is_null() {
+                let crtc_x = (*crtc_info).x;
+                let crtc_y = (*crtc_info).y;
+                let crtc_width = (*crtc_info).width as i32;
+                let crtc_height = (*crtc_info).height as i32;
+
+                if x >= crtc_x && x < crtc_x + crtc_width && y >= crtc_y && y < crtc_y + crtc_height {
+                    best_bounds = ScreenBounds {
+                        left: crtc_x,
+                        top: crtc_y,
+                        right: crtc_x + crtc_width,
+                        bottom: crtc_y + crtc_height,
+                        scale_factor: 1.0,
+                    };
+                    XRRFreeCrtcInfo(crtc_info);
+                    XRRFreeOutputInfo(output_info);
+                    break;
+                }
+                XRRFreeCrtcInfo(crtc_info);
+            }
+            XRRFreeOutputInfo(output_info);
+        }
+
+        XRRFreeScreenResources(screen_resources);
+        XCloseDisplay(display);
+        best_bounds
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_screen_bounds_wayland() -> ScreenBounds {
     ScreenBounds {
         left: 0,
         top: 0,

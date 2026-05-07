@@ -1,0 +1,122 @@
+name: Dev Build
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri App
+        run: pnpm tauri build
+
+      - name: Package Portable App
+        shell: pwsh
+        run: |
+          mkdir MoonTranslator_Portable
+          Copy-Item "src-tauri\target\release\moon*.exe" "MoonTranslator_Portable\"
+          Copy-Item "public\icon.ico" "MoonTranslator_Portable\"
+          Compress-Archive -Path "MoonTranslator_Portable\*" -DestinationPath "MoonTranslator-dev.${{ github.run_number }}.zip"
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonTranslator-Windows-Dev-${{ github.run_number }}
+          path: MoonTranslator-dev.${{ github.run_number }}.zip
+          retention-days: 30
+
+  build-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libx11-dev \
+            libxrandr-dev \
+            libwayland-dev
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri App
+        run: pnpm tauri build
+
+      - name: Rename AppImage
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          APPIMAGE_FILE=$(ls *.AppImage | head -n 1)
+          if [ -n "$APPIMAGE_FILE" ]; then
+            mv "$APPIMAGE_FILE" "MoonTranslator-dev.${{ github.run_number }}.AppImage"
+            chmod +x "MoonTranslator-dev.${{ github.run_number }}.AppImage"
+          fi
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonTranslator-Linux-Dev-${{ github.run_number }}
+          path: src-tauri/target/release/bundle/appimage/MoonTranslator-dev.${{ github.run_number }}.AppImage
+          retention-days: 30
